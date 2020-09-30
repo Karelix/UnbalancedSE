@@ -36,6 +36,13 @@ def back_equations(x,ref,y,flag):
   return eqs
 
 def bse(net,anc,curr,jac):
+  '''
+  bse looks recursively every level of the network bottom to top and
+  examines every bus using as reference its ancestor's state, the meaurements
+  of the line between them and the cumulative power injection provided form 
+  previous iterations of bse    
+  '''
+  # Calculate cumulative power injection on current bus
   s,sigmaP,sigmaQ = np.zeros((3,1)), np.ones((3,1))*0.000000001**2, np.ones((3,1))*0.000000001**2
   for d in curr.desc:
     ts,tsigmaP,tsigmaQ = bse(net,curr,d,jac)
@@ -46,10 +53,14 @@ def bse(net,anc,curr,jac):
   if anc is None:
     return None,None,None
   else:
+    # Lines are stored in the network using as index the tuple of the two buses it connects
     line = net.lines[(anc,curr)]
+
+    # Collect all measurements provided for line and current bus and their varainces
     meas = np.empty((0,1))
     sigmas = np.empty((0,1))
     flag = False
+    # 'ij' means that it is the power flow from ancestor to current bus
     if 'ij' in line.meas:
       meas = np.concatenate((meas,line.meas['ij']['p'].m,line.meas['ij']['q'].m),axis=0)
       sigmas = np.concatenate((sigmas,line.meas['ij']['p'].sigma**2,line.meas['ij']['q'].sigma**2),axis=0)
@@ -58,6 +69,8 @@ def bse(net,anc,curr,jac):
     q_inj = np.imag(s) + curr.q_inj.m
     meas = np.concatenate((meas,p_inj,q_inj),axis=0)
     sigmas = np.concatenate((sigmas,sigmaP,sigmaQ),axis=0)
+
+    # Create weight diagonal matrix from variances
     W = sigmas*np.identity(sigmas.shape[0])
     x = np.concatenate((curr.v_states,curr.delta_states),axis=0)
     ref = np.concatenate((anc.v_states,anc.delta_states),axis=0)
@@ -65,6 +78,8 @@ def bse(net,anc,curr,jac):
     err = []
     i = 0
     e = 10
+    print(curr.name)
+    # Branch based state estimation
     while np.abs(e) > 0.00001 and i < 100:
       H = jac(x,ref,y,flag).reshape(-1,len(list(x)))
       G = H.T.dot(W).dot(H)
@@ -91,6 +106,9 @@ def bse(net,anc,curr,jac):
     return p+1j*q, new_sigmaP, new_sigmaQ
 
 def print_states(buses):
+  '''
+  Recursively print the network states in breadth first search order
+  '''
   descs = []
   for bus in buses:
     if not bus.slack:
@@ -104,11 +122,20 @@ def print_states(buses):
    print_states(descs)
 
 def backward(net):
+  '''
+  Backward sweep for state estimation algorithm with bfs
+  '''
+
+  # jac is a function that creates the jacobian matrix of back_equations based on the x vector provided
   jac = jacobian(back_equations)
   _,_,_ = bse(net,None,net.buses[1],jac)
   # print_states([net.buses[1]])
 
 def fwd_equations(x,ref,y):
+  '''
+  Equations used in forward sweep are simply the 
+  power flows from reference bus to current bus.
+  '''
   Vi,deltai = ref[0:3], ref[3:6]
   Vj,deltaj = x[0:3], x[3:6]
   p = Pflow(Vi,deltai,Vj,deltaj,y,'ij')
@@ -117,6 +144,14 @@ def fwd_equations(x,ref,y):
   return eqs
 
 def fse(net,anc,curr,jac):
+  '''
+  fse looks, recursively, the whole network using depth first search.
+  For every bus, it examines the line between this bus and its ancestor bus.
+  Using the power flow of this line, calculated in the backward sweep, and 
+  the states of the ancestor bus, calculated in a previous iteration of the 
+  fse, as reference, fse claculates the definite states of the bus for this 
+  iteration of backward/forward sweep.
+  '''
   if anc is not None:
     line = net.lines[(anc,curr)]
     meas = line.p_eq.m
@@ -130,26 +165,37 @@ def fse(net,anc,curr,jac):
     err = []
     i = 0
     e = 10
+    print(curr.name)
     while np.abs(e) > 0.00001 and i < 100:
       H = jac(x,ref,y).reshape(-1,len(list(x)))
       G = H.T.dot(W).dot(H)
-      b = H.T.dot(W).dot(meas-back_equations(x,ref,y,flag))
+      b = H.T.dot(W).dot(meas-fwd_equations(x,ref,y))
       dx = nu.linalg.solve(G,b)
       e = np.sum(dx)/len(dx)
       # print(e)
       err.append(e)
       i = i + 1
       x = x + dx
+
     curr.v_states = x[0:3]
     curr.delta_states = x[3:6]
+  
+  for d in curr.desc:
+    fse(net,curr,d,jac)
 
 def forward(net):
+  '''
+  Forward sweep for state estimation algorithm with bfs
+  '''
+  # jac is a function that creates the jacobian matrix of fwd_equations based on the x vector provided
   jac = jacobian(fwd_equations)
   fse(net,None,net.buses[1],jac)
 
 def state_estimation(net):
   
   # Putting all states in a vector to monitor the error
+  # States are initialized using the initial state from the buses(flat voltage profile)
+  # init_states simply looks for the states stored in network's bus objects and puts them in bfs order in a vector
   x = init_states([net.buses[1]],np.empty((0,1)))
 
   i = 0
@@ -160,8 +206,12 @@ def state_estimation(net):
     backward(net)
     print('Forward',i)
     forward(net)
+    # After forward, the updated states are stored in the bus objects
+    # init_states simply looks for the states stored in network's bus objects and puts them in bfs order in a vector
     new_x = init_states([net.buses[1]],np.empty((0,1)))
+    # dx is the abdolute difference between the old and the new states
     dx = np.abs(new_x - x)
+    # calculate the mean of dx
     e = sum(dx)/len(dx)
     err = err + [e]
     x = new_x
@@ -195,11 +245,10 @@ if __name__ == '__main__':
   net.add_bus(Bus(3,name='Bus 3',v_base=v_base/np.sqrt(3),config='4'),3)
 
   # Bus 4 IEEE 4-bus feeder Unbalanced
-  # s = A.T.dot(np.array([[1200000/0.9,1200000/0.9,1200000/0.9]]).T*np.exp(1j*np.arccos([[0.9,0.9,0.9]])).T/(s_base/3))
   s = np.array([[1275000/0.85,1800000/0.9,2375000/0.95]]).T*np.exp(1j*np.arccos([[0.85,0.9,0.95]])).T/(s_base/3)
   p = np.real(s)
   q = np.imag(s)
-  net.add_bus(Bus(4,p_inj=p,q_inj=q,name='Bus 4',v_base=v_base/np.sqrt(3),config='4'),4)
+  net.add_bus(Bus(4,p_inj=p,q_inj=q,p_sigma=0.1,q_sigma=0.1,name='Bus 4',v_base=v_base/np.sqrt(3),config='4'),4)
 
   # Sort buses by index. Slack always has index 1
   net.buses = {k:v for k,v in sorted(net.buses.items())}
@@ -248,38 +297,6 @@ if __name__ == '__main__':
   l.meas['ij'] = {}
   l.meas['ij']['p'] = Measurement(t='PFij',m=P,sigma=0.02*np.ones((3,1)))
   l.meas['ij']['q'] = Measurement(t='QFij',m=Q,sigma=0.02*np.ones((3,1)))
-  create_levels(net)
+  
+  # create_levels(net)
   state_estimation(net)
-  # -------------------------------------------------------------------------------------------
-    
-  # jac = jacobian(equations)
-  # err = []
-  # i = 0
-  # e = 10
-  # while np.abs(e) > 0.00001 and i < 100:
-  #   print(i)
-  #   H = jac(x).reshape(-1,len(list(x)))
-  #   # printA(H)
-  #   # input()
-  #   G = H.T.dot(W).dot(H)
-  #   # print(np.linalg.det(H.T.dot(H)))
-  #   # input()
-  #   b = H.T.dot(W).dot(meas-equations(x))
-  #   dx = nu.linalg.solve(G,b)
-  #   # print(dx)
-  #   e = np.sum(dx)/len(dx)
-  #   print(e)
-  #   err.append(e)
-  #   i = i + 1
-  #   if np.abs(e) > 0.00001:
-  #     x = x + dx.flatten()
-    
-  # print(x)
-  # for i in range(3):
-  #   v_base = 12470 if i == 0 else 4160
-  #   print('----- V'+str(i+2)+' -----')
-  #   for j,ph in zip(range(3),['a: ','b: ','c: ']):
-  #     print(ph,end='')
-  #     v = round(x[3+6*i+j]*v_base/np.sqrt(3),3)
-  #     d = round(np.degrees(x[6+6*i+j]),3)
-  #     print(str(v)+'/'+str(d))
