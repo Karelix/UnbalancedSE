@@ -44,10 +44,10 @@ def init_states(x,buses,meas,sigma,pos):
 
 def equations(x,buses,net,eqs):
   descs = []
-  x = x.reshape((-1,1),order='C')
+  # x = x.reshape((-1,1),order='C')
   for anc,bus in buses:
     if not bus.slack:
-      anc_v = x[anc.v_pos[0]:anc.v_pos[0]+3] if not anc.slack else anc.v_states
+      anc_v = x[anc.v_pos[0]:anc.v_pos[0]+3]
       anc_delta = x[anc.delta_pos[0]:anc.delta_pos[0]+3] if not anc.slack else anc.delta_states
       bus_v = x[bus.v_pos[0]:bus.v_pos[0]+3]
       bus_delta = x[bus.delta_pos[0]:bus.delta_pos[0]+3]
@@ -82,7 +82,7 @@ def equations(x,buses,net,eqs):
   if len(descs) == 0:
     return eqs
   else:
-    x = x.flatten()
+    # x = x.flatten()
     return equations(x,descs,net,eqs)
 
 def print_phases(v,angles):
@@ -103,7 +103,7 @@ def print_states(x,buses):
 
 def state_estimation(net):
   x,meas,sigma = init_states(np.empty((0,1)),[(None,net.buses[1])],np.empty((0,1)),np.empty((0,1)),0)
-  x = x.flatten()
+  # x = x.flatten()
   # print(meas*6000000/3)
   # input()
   # print(equations(x,[(None,net.buses[1])],net,np.empty((0,1))))
@@ -111,14 +111,12 @@ def state_estimation(net):
   jac = jacobian(equations)
 
   W = sigma**(-2)*np.identity(sigma.shape[0])
-  printA(W)
-  input()
   err = []
   i = 0
   e = 10
   # Branch based state estimation
   while np.abs(e) > 0.00001 and i < 100:
-    # print(i)
+    print(i)
     H = jac(x,[(None,net.buses[1])],net,np.empty((0,1))).reshape(-1,len(list(x)))
     # H = jac(x,[(None,net.buses[1])],net,np.empty((0,1)))
     # printA(H)
@@ -130,7 +128,7 @@ def state_estimation(net):
     print(e)
     err.append(e)
     i = i + 1
-    x = x + dx.flatten()
+    x = x + dx
   
   print_states(x.reshape((-1,1),order='F'),[net.buses[1]])
 
@@ -223,11 +221,6 @@ if __name__ == '__main__':
   Q = Qflow(np.abs(V3),np.angle(V3),np.abs(V4),np.angle(V4),l.y_mtx,'ij')
   l.add_measurement(Measurement(t='PFij',m=P,sigma=0.2*np.ones((3,1))))
   l.add_measurement(Measurement(t='QFij',m=Q,sigma=0.2*np.ones((3,1))))
-
-  P = Pflow(np.abs(V3),np.angle(V3),np.abs(V4),np.angle(V4),l.y_mtx,'ji')
-  Q = Qflow(np.abs(V3),np.angle(V3),np.abs(V4),np.angle(V4),l.y_mtx,'ji')
-  print(P*s_base/3)
-  print(Q*s_base/3)
   
   # create_levels(net)
   state_estimation(net)
