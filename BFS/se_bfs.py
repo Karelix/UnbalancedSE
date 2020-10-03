@@ -30,8 +30,8 @@ def back_equations(x,ref,y,flag):
     p = Pflow(Vi,deltai,Vj,deltaj,y,'ij')
     q = Qflow(Vi,deltai,Vj,deltaj,y,'ij')
     eqs = np.concatenate((eqs,p,q),axis=0)
-  p = Pflow(Vi,deltai,Vj,deltaj,y,'ji')
-  q = Qflow(Vi,deltai,Vj,deltaj,y,'ji')
+  p = -Pflow(Vi,deltai,Vj,deltaj,y,'ji')
+  q = -Qflow(Vi,deltai,Vj,deltaj,y,'ji')
   eqs = np.concatenate((eqs,p,q),axis=0)
   return eqs
 
@@ -71,7 +71,7 @@ def bse(net,anc,curr,jac):
     sigmas = np.concatenate((sigmas,sigmaP,sigmaQ),axis=0)
 
     # Create weight diagonal matrix from variances
-    W = sigmas*np.identity(sigmas.shape[0])
+    W = 1/sigmas*np.identity(sigmas.shape[0])
     x = np.concatenate((curr.v_states,curr.delta_states),axis=0)
     ref = np.concatenate((anc.v_states,anc.delta_states),axis=0)
     y = line.y_mtx
@@ -100,7 +100,7 @@ def bse(net,anc,curr,jac):
       measP = line.meas['ij']['p'].m
       measQ = line.meas['ij']['q'].m
       new_sigmaP = np.min((line.meas['ij']['p'].sigma**2,(p-measP)**2),axis=0)
-      new_sigmaP = np.min((line.meas['ij']['q'].sigma**2,(q-measQ)**2),axis=0)
+      new_sigmaQ = np.min((line.meas['ij']['q'].sigma**2,(q-measQ)**2),axis=0)
     line.p_eq = Measurement(t='PFij', m=p, sigma=np.sqrt(new_sigmaP))
     line.q_eq = Measurement(t='QFij', m=q, sigma=np.sqrt(new_sigmaQ))
     return p+1j*q, new_sigmaP, new_sigmaQ
@@ -158,7 +158,7 @@ def fse(net,anc,curr,jac):
     meas = np.concatenate((meas,line.q_eq.m),axis=0)
     sigma = line.p_eq.sigma**2
     sigma = np.concatenate((sigma,line.q_eq.sigma**2),axis=0)
-    W = sigma*np.identity(sigma.shape[0])
+    W = 1/sigma*np.identity(sigma.shape[0])
     x = np.concatenate((curr.v_states,curr.delta_states),axis=0)
     ref = np.concatenate((anc.v_states,anc.delta_states),axis=0)
     y = line.y_mtx
@@ -248,7 +248,7 @@ if __name__ == '__main__':
   s = np.array([[1275000/0.85,1800000/0.9,2375000/0.95]]).T*np.exp(1j*np.arccos([[0.85,0.9,0.95]])).T/(s_base/3)
   p = np.real(s)
   q = np.imag(s)
-  net.add_bus(Bus(4,p_inj=p,q_inj=q,p_sigma=0.1,q_sigma=0.1,name='Bus 4',v_base=v_base/np.sqrt(3),config='4'),4)
+  net.add_bus(Bus(4,p_inj=p,q_inj=q,p_sigma=0.1,q_sigma=0.001,name='Bus 4',v_base=v_base/np.sqrt(3),config='4'),4)
 
   # Sort buses by index. Slack always has index 1
   net.buses = {k:v for k,v in sorted(net.buses.items())}
@@ -268,8 +268,8 @@ if __name__ == '__main__':
   P = Pflow(np.abs(V1),np.angle(V1),np.abs(V2),np.angle(V2),l.y_mtx,'ij')
   Q = Qflow(np.abs(V1),np.angle(V1),np.abs(V2),np.angle(V2),l.y_mtx,'ij')
   l.meas['ij'] = {}
-  l.meas['ij']['p'] = Measurement(t='PFij',m=P,sigma=0.02*np.ones((3,1)))
-  l.meas['ij']['q'] = Measurement(t='QFij',m=Q,sigma=0.02*np.ones((3,1)))
+  l.meas['ij']['p'] = Measurement(t='PFij',m=P,sigma=0.2*np.ones((3,1)))
+  l.meas['ij']['q'] = Measurement(t='QFij',m=Q,sigma=0.2*np.ones((3,1)))
 
   v_base = 4160
   z_base = v_base**2/s_base
@@ -283,8 +283,8 @@ if __name__ == '__main__':
   P = Pflow(np.abs(V2),np.angle(V2),np.abs(V3),np.angle(V3),l.y_mtx,'ij')
   Q = Qflow(np.abs(V2),np.angle(V2),np.abs(V3),np.angle(V3),l.y_mtx,'ij')
   l.meas['ij'] = {}
-  l.meas['ij']['p'] = Measurement(t='PFij',m=P,sigma=0.02*np.ones((3,1)))
-  l.meas['ij']['q'] = Measurement(t='QFij',m=Q,sigma=0.02*np.ones((3,1)))
+  l.meas['ij']['p'] = Measurement(t='PFij',m=P,sigma=0.2*np.ones((3,1)))
+  l.meas['ij']['q'] = Measurement(t='QFij',m=Q,sigma=0.2*np.ones((3,1)))
 
   b = (net.buses[3],net.buses[4])
   l = Line(idx=2,buses=b,z_mtx=zy*f_to_m(2500)/z_base,i_base=i_base,name='Line 3-4',config='4-wire') # 2500ft = 0.4734848 miles
@@ -295,8 +295,8 @@ if __name__ == '__main__':
   P = Pflow(np.abs(V3),np.angle(V3),np.abs(V4),np.angle(V4),l.y_mtx,'ij')
   Q = Qflow(np.abs(V3),np.angle(V3),np.abs(V4),np.angle(V4),l.y_mtx,'ij')
   l.meas['ij'] = {}
-  l.meas['ij']['p'] = Measurement(t='PFij',m=P,sigma=0.02*np.ones((3,1)))
-  l.meas['ij']['q'] = Measurement(t='QFij',m=Q,sigma=0.02*np.ones((3,1)))
+  l.meas['ij']['p'] = Measurement(t='PFij',m=P,sigma=0.2*np.ones((3,1)))
+  l.meas['ij']['q'] = Measurement(t='QFij',m=Q,sigma=0.2*np.ones((3,1)))
   
   # create_levels(net)
   state_estimation(net)

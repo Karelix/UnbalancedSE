@@ -66,10 +66,11 @@ class Bus:
     self.lvl_idx = level_idx
     self.desc = []
     
-    self.p_inj = Measurement(t='PI', m=p_inj, sigma=p_sigma)
-    self.q_inj = Measurement(t='QI', m=q_inj, sigma=q_sigma)
-    self.p_eq = Measurement(t='PI', m=None, sigma=None)
-    self.q_eq = Measurement(t='QI', m=None, sigma=None)
+    self.meas = []
+    # self.p_inj = Measurement(t='PI', m=p_inj, sigma=p_sigma)
+    # self.q_inj = Measurement(t='QI', m=q_inj, sigma=q_sigma)
+    # self.p_eq = Measurement(t='PI', m=None, sigma=None)
+    # self.q_eq = Measurement(t='QI', m=None, sigma=None)
 
     self.v_states = np.ones((3,1))
     self.delta_states = np.array([[0,-2*np.pi/3,2*np.pi/3]]).T
@@ -78,6 +79,9 @@ class Bus:
 
   def change_idx(self,new_idx):
     self.idx = new_idx
+
+  def add_measurement(self,measurement):
+    self.meas.append(measurement)
 
 class Line:
 
@@ -96,13 +100,13 @@ class Line:
     self.level = level
     self.name = name
 
-    self.meas = {}
-    if meas_ij is not None:
-      self.meas['ij'] = meas_ij
-    if meas_ji is not None:
-      self.meas['ji'] = meas_ji
-    self.p_eq = Measurement(t='PFij', m=None, sigma=None)
-    self.q_eq = Measurement(t='QFij', m=None, sigma=None)
+    self.meas = []
+    # if meas_ij is not None:
+    #   self.meas['ij'] = meas_ij
+    # if meas_ji is not None:
+    #   self.meas['ji'] = meas_ji
+    # self.p_eq = Measurement(t='PFij', m=None, sigma=None)
+    # self.q_eq = Measurement(t='QFij', m=None, sigma=None)
 
     if not trans:
       y = np.linalg.inv(z_mtx)
@@ -124,6 +128,9 @@ class Line:
       temp = np.concatenate((A,C),axis=1)
       temp2 = np.concatenate((C.T,B),axis=1)
       self.y_mtx = np.concatenate((temp,temp2),axis=0)
+
+  def add_measurement(self,measurement):
+    self.meas.append(measurement)
 
 def bus_levels(net,b,i):
   print(b.name,i)
